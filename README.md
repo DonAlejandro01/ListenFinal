@@ -1,11 +1,15 @@
-Para poder instalar las dependencias del proyecto debes iniciar el proyecto con este codigo
+# Listen
 
-pip install -r requirements.txt 
+Este proyecto realiza un análisis de una presentación PowerPoint según la rúbrica cargada por el usuario y le proporciona una nota. El objetivo es entregar un feedback útil al usuario que lo solicite.
 
-Posterior pyedes iniciar el proyecto con 
+## Requisitos
+- Python 3.12
 
-python app.py
+## Pasos a seguir
 
-variable de entorno 
-
- .\venv\Scripts\activate     
+1. Instalar dependenicas 
+- pip install Flask werkzeug pymupdf python-pptx python-dotenv Pillow openai==0.27.0 google-cloud-vision
+2. Iniciar variables de entorno en windows
+ -  .\venv\Scripts\activate     
+3. Iniciar proyecto
+- python app.py

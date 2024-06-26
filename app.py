@@ -1,12 +1,20 @@
 from flask import Flask, render_template, request, redirect, url_for, flash
 import os
+import io
+from PIL import Image
 from werkzeug.utils import secure_filename
 import fitz  # PyMuPDF para extraer texto de PDFs
 import openai
 from dotenv import load_dotenv
 from pptx import Presentation
+from pptx.enum.shapes import MSO_SHAPE_TYPE
+from google.cloud import vision
+import logging
 
-load_dotenv()  # Cargar variables de entorno desde un archivo .env
+logging.basicConfig(level=logging.DEBUG)
+
+# Cargar las variables de entorno desde el archivo .env
+load_dotenv()
 
 app = Flask(__name__)
 app.config['UPLOAD_FOLDER'] = 'uploads/'
@@ -18,10 +26,13 @@ openai.api_key = os.getenv('OPENAI_API_KEY')  # Clave API de OpenAI desde una va
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in app.config['ALLOWED_EXTENSIONS']
 
+# Asegurarse de que la carpeta de subidas exista
+if not os.path.exists(app.config['UPLOAD_FOLDER']):
+    os.makedirs(app.config['UPLOAD_FOLDER'])
+
 @app.route('/')
 def upload_file():
     return render_template('upload.html')
-
 @app.route('/uploader', methods=['GET', 'POST'])
 def uploader_file():
     if request.method == 'POST':
@@ -31,7 +42,6 @@ def uploader_file():
         
         rubric_file = request.files['rubric']
         presentation_file = request.files['presentation']
-        required_score = request.form.get('required_score')
         
         if rubric_file.filename == '' or presentation_file.filename == '':
             flash('No se seleccionó ningún archivo')
@@ -45,7 +55,6 @@ def uploader_file():
             rubric_file.save(rubric_path)
             presentation_file.save(presentation_path)
             
-            # Verificar si el archivo es una rúbrica
             rubric_text = extract_text_from_pdf(rubric_path)
             is_rubric, _ = check_if_rubric(rubric_text)
             
@@ -53,18 +62,25 @@ def uploader_file():
                 flash('El archivo cargado no es una rúbrica válida')
                 return redirect(request.url)
 
-            # Consultar a ChatGPT sobre la rúbrica
             measures = get_measures(rubric_text)
             points_type = get_points_type(rubric_text)
-            total_score = calculate_total_score(measures, points_type)
+            max_score = calculate_total_score(measures, points_type)  # Calcular el puntaje máximo
 
-            # Extraer texto de la presentación PPT
             presentation_text = extract_text_from_ppt(presentation_path)
+            titles = extract_titles(presentation_path)
+            subtitles = extract_subtitles(presentation_path)
+            body_texts = extract_body_texts(presentation_path, titles, subtitles)
+            images = extract_images(presentation_path)
+            analyzed_images = [analyze_image_google_cloud(slide_idx, image) for slide_idx, image in images]
 
-            # Evaluar la presentación
-            presentation_score = evaluate_presentation(presentation_text, measures, points_type)
+            total_score, feedback = evaluate_presentation_by_measures(presentation_text, measures, points_type, titles, subtitles, body_texts, analyzed_images)
 
-            return render_template('result.html', is_rubric=is_rubric, measures=measures, points_type=points_type, total_score=total_score, required_score=required_score, presentation_score=presentation_score)
+            grade = convert_score_to_grade(total_score, max_score)  # Convertir el puntaje total en una nota
+
+            if grade == 7:
+                feedback += "\nFelicidades, has obtenido una nota perfecta. ¡Excelente trabajo!"
+
+            return render_template('result.html', presentation_score=grade, feedback=feedback)
         
         flash('Archivo no permitido')
         return redirect(request.url)
@@ -94,10 +110,10 @@ def check_if_rubric(text):
             model="gpt-4",
             messages=[
                 {"role": "system", "content": "You are a file analysis tool. Your job is to determine whether the provided text is a rubric used for evaluation or not."},
-                {"role": "user", "content": f"Evalua si este texto esta relacionado o no a una rubrica: {text[:3000]}"}
+                {"role": "user", "content": f"Evalua si este texto está relacionado o no a una rúbrica: {text[:3000]}"}
             ]
         )
-        is_rubric = "Sí" in response.choices[0]['message']['content'] or "yes" in response.choices[0]['message']['content'].lower()
+        is_rubric = "Sí" in response['choices'][0]['message']['content'] or "yes" in response['choices'][0]['message']['content'].lower()
         return is_rubric, None  # Retornar None como segundo valor
     except Exception as e:
         print(f"Error al evaluar la rúbrica: {e}")
@@ -109,17 +125,16 @@ def get_measures(text):
             model="gpt-4",
             messages=[
                 {"role": "system", "content": "You are a file analysis tool. Your job is to extract the rubric statements from the provided text. Each statement describes an aspect of the presentation that is being evaluated."},
-                {"role": "user", "content": f"Extrae los enunciados de la rúbrica del siguiente texto. Solo proporciona los títulos de las categorías evaluadas,sin frase introductorio,sin frase de conclusion, sin descripción, ni valores numéricos, ni caracteres especiales. Proporciona cada título en una nueva línea: {text[:3000]}"}
+                {"role": "user", "content": f"Extrae los enunciados de la rúbrica del siguiente texto. Solo proporciona los títulos de las categorías evaluadas, sin frase introductoria, sin frase de conclusión, sin descripción, ni valores numéricos, ni caracteres especiales. Proporciona cada título en una nueva línea: {text[:3000]}"}
             ]
         )
-        # Parse the response to extract the enunciados
-        measures = response.choices[0]['message']['content']
+        measures = response['choices'][0]['message']['content']
         measures_list = [measure.strip() for measure in measures.split('\n') if measure.strip()]
         return measures_list
     except Exception as e:
         print(f"Error al extraer las medidas: {e}")
-        return []   
-    
+        return []
+
 def get_points_type(text):
     try:
         response = openai.ChatCompletion.create(
@@ -129,8 +144,7 @@ def get_points_type(text):
                 {"role": "user", "content": f"Extrae el tipo de puntos que se están utilizando en esta rúbrica. No me des texto introductorio, ni de conclusión, ni tampoco descripción. Solo proporciona los valores numéricos en orden descendente: {text[:3000]}"}
             ]
         )
-        points_content = response.choices[0]['message']['content'].strip()
-        # Convert the response to a list of numbers
+        points_content = response['choices'][0]['message']['content'].strip()
         points_list = [int(point.strip()) for point in points_content.split(',')]
         return sorted(points_list, reverse=True)
     except Exception as e:
@@ -144,27 +158,191 @@ def calculate_total_score(measures, points_type):
     total_score = len(measures) * max_point
     return total_score
 
-def evaluate_presentation(presentation_text, measures, points_type):
+def extract_titles(filepath):
+    prs = Presentation(filepath)
+    titles = []
+
+    for slide in prs.slides:
+        for shape in slide.shapes:
+            if shape.has_text_frame:
+                title = shape.text_frame.text
+                if title:
+                    titles.append(title)
+                    break
+
+    # Imprimir los títulos extraídos en la consola
+    for index, title in enumerate(titles):
+        print(f"Slide {index + 1}: {title}")
+
+    return titles
+
+def extract_subtitles(filepath):
+    prs = Presentation(filepath)
+    subtitles = []
+
+    for slide in prs.slides:
+        subtitle_found = False
+        for shape in slide.shapes:
+            if shape.has_text_frame and not subtitle_found:
+                paragraphs = shape.text_frame.paragraphs
+                if len(paragraphs) > 1:
+                    subtitles.append(paragraphs[1].text)
+                    subtitle_found = True
+
+        if not subtitle_found:
+            subtitles.append("")
+
+    # Imprimir los subtítulos extraídos en la consola
+    for index, subtitle in enumerate(subtitles):
+        print(f"Slide {index + 1}: {subtitle}")
+
+    return subtitles
+
+def extract_body_texts(filepath, titles, subtitles):
+    prs = Presentation(filepath)
+    body_texts = []
+
+    for slide_idx, slide in enumerate(prs.slides):
+        body_text = []
+        for shape in slide.shapes:
+            if not shape.has_text_frame:
+                continue
+            for paragraph in shape.text_frame.paragraphs:
+                for run in paragraph.runs:
+                    font_size = run.font.size
+                    text = run.text.strip()
+                    if font_size and font_size < 2400000 and text not in titles and text not in subtitles:
+                        body_text.append(text)
+        body_texts.append('\n'.join(body_text))
+
+    # Imprimir los textos del cuerpo extraídos en la consola
+    for index, body_text in enumerate(body_texts):
+        print(f"Slide {index + 1} Body Text:\n{body_text}\n")
+
+    return body_texts
+
+def extract_images(filepath):
+    prs = Presentation(filepath)
+    images = []
+
+    for slide_idx, slide in enumerate(prs.slides, start=1):
+        for shape in slide.shapes:
+            if shape.shape_type == MSO_SHAPE_TYPE.PICTURE:
+                image = shape.image
+                image_bytes = io.BytesIO(image.blob)
+                pil_image = Image.open(image_bytes)
+                images.append((slide_idx, pil_image))  # Incluir el número de diapositiva y la imagen
+
+    return images
+
+
+def analyze_image_google_cloud(slide_idx, image):
+    client = vision.ImageAnnotatorClient()
+    img_byte_arr = io.BytesIO()
+    image.save(img_byte_arr, format='PNG')
+    content = img_byte_arr.getvalue()
+
+    image = vision.Image(content=content)
+    response = client.label_detection(image=image)
+    labels = response.label_annotations
+
+    analyzed_image_info = ', '.join([label.description for label in labels])
+    print(f"Slide {slide_idx}: {analyzed_image_info}")  # Incluir el número de diapositiva en la impresión
+    
+    return slide_idx, analyzed_image_info  # Devolver el número de diapositiva junto con la información analizada
+def evaluate_presentation_by_measures(presentation_text, measures, points_type, titles, subtitles, body_texts, analyzed_images):
     try:
         measures_str = "\n".join(measures)
         points_str = ", ".join(map(str, points_type))
-        prompt = f"Evalúa la siguiente presentación basada en las siguientes medidas y puntajes. Solo proporciona un número como resultado:\n\nMedidas:\n{measures_str}\n\nTipos de puntos:\n{points_str}\n\nTexto de la presentación:\n{presentation_text[:3000]}"
+        titles_str = "\n".join(titles)
+        subtitles_str = "\n".join(subtitles)
+        body_texts_str = "\n".join(body_texts)
+        images_info_str = "\n".join([f"Slide {idx}: {info}" for idx, info in analyzed_images])
+
+        prompt = f"""
+        Evalúa la siguiente presentación basada en las medidas y tipos de puntos proporcionados. Proporciona un puntaje para cada medida y un feedback general con recomendaciones para mejorar:
+
+        Medidas:
+        {measures_str}
+
+        Tipos de puntos:
+        {points_str}
+
+        Títulos:
+        {titles_str}
+
+        Subtítulos:
+        {subtitles_str}
+
+        Textos del cuerpo:
+        {body_texts_str}
+
+        Información de las imágenes:
+        {images_info_str}
+
+        Texto de la presentación:
+        {presentation_text[:3000]}
+        """
+
+        print(f"Prompt enviado a OpenAI: {prompt}")  # Imprimir el prompt para verificar su contenido
         
         response = openai.ChatCompletion.create(
             model="gpt-4",
             messages=[
-                {"role": "system", "content": "You are an evaluation tool. Your job is to evaluate the provided presentation text based on the given rubric measures and point types, and provide a numerical score as the result."},
+                {"role": "system", "content": "You are an evaluation tool. Your job is to evaluate the provided presentation text based on the given rubric measures and point types, and provide scores for each measure and general feedback as the result."},
                 {"role": "user", "content": prompt}
             ]
         )
-        
-        # Intentar extraer un número de la respuesta
-        response_content = response.choices[0]['message']['content'].strip()
-        score = int(response_content.split()[0])  # Extraer el primer número de la respuesta
-        return score
+
+        response_content = response['choices'][0]['message']['content'].strip()
+        print(f"Respuesta de OpenAI: {response_content}")  # Imprimir la respuesta para verificar su contenido
+
+        # Procesar la respuesta para extraer puntajes y feedback
+        lines = response_content.split("\n")
+        scores = {}
+        feedback_lines = []
+        for line in lines:
+            if ":" in line:
+                measure, score = line.split(":")
+                measure = measure.strip()
+                try:
+                    score = int(score.strip().split("/")[0])
+                    scores[measure] = score
+                except ValueError:
+                    # En caso de no poder convertir el puntaje, lo consideramos 0
+                    scores[measure] = 0
+            else:
+                feedback_lines.append(line)
+
+        feedback = "\n".join(feedback_lines).strip()
+
+        # Calcular el puntaje total
+        total_score = sum(scores.values())
+
+        return total_score, feedback
     except Exception as e:
         print(f"Error al evaluar la presentación: {e}")
-        return 0
+        return 0, "Error en la evaluación de la presentación."
+
+
+def convert_score_to_grade(total_score, max_score):
+    if max_score == 0:
+        return 0  # Evitar división por cero
+    percentage = total_score / max_score
+    if percentage >= 0.9:
+        return 7
+    elif percentage >= 0.8:
+        return 6
+    elif percentage >= 0.7:
+        return 5
+    elif percentage >= 0.6:
+        return 4
+    elif percentage >= 0.5:
+        return 3
+    elif percentage >= 0.4:
+        return 2
+    else:
+        return 1
 
 if __name__ == '__main__':
     app.run(debug=True)
