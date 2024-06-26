@@ -1,18 +1,56 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <title>Resultados de la Evaluación</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Resultados de la Rúbrica</title>
+    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/css/bootstrap.min.css">
 </head>
 <body>
-    <h1>Resultados de la Evaluación</h1>
-    {% for result in evaluation_results %}
-        <h2>Diapositiva: {{ loop.index }}</h2>
-        <p><strong>Categoría:</strong> {{ result.slide.category }}</p>
-        <p><strong>Título:</strong> {{ result.slide.title }}</p>
-        <p><strong>Contenido:</strong> {{ result.slide.content }}</p>
-        <p><strong>Evaluación:</strong> {{ result.evaluation }}</p>
-        <p><strong>Puntaje:</strong> {{ result.score }}</p>
-    {% endfor %}
+    <div class="container mt-5">
+        <h2 class="text-center">Resultados de la Rúbrica</h2>
+        {% if is_rubric %}
+            <div class="alert alert-success" role="alert">
+                El archivo es una rúbrica válida.
+            </div>
+            <h4>Medidas Evaluadas:</h4>
+            <ul>
+                {% for medida in measures %}
+                    <li>{{ medida }}</li>
+                {% endfor %}
+            </ul>
+            <h4>Tipo de Evaluación:</h4>
+            <ul>
+                <li>{{ tipo }}</li>
+            </ul>
+            <h4>Valores de Evaluación:</h4>
+            <ul>
+                {% for valor in valores %}
+                    <li>{{ valor }}</li>
+                {% endfor %}
+            </ul>
+            <h4>Tipo de Puntos:</h4>
+            <ul>
+                {% for point in points_type %}
+                    <li>{{ point }}</li>
+                {% endfor %}
+            </ul>
+            <h4>Puntaje Total:</h4>
+            <ul>
+                <li>{{ total_score }}</li>
+            </ul>
+            <h4>Exigencia de Nota:</h4>
+            <ul>
+                <li>{{ required_score }}</li>
+            </ul>
+            
+            <p><strong>Puntaje de la presentación:</strong> {{ presentation_score }}</p>
+        {% else %}
+            <div class="alert alert-danger" role="alert">
+                El archivo cargado no es una rúbrica válida.
+            </div>
+        {% endif %}
+        <a href="{{ url_for('upload_file') }}" class="btn btn-primary mt-3">Subir otro archivo</a>
+    </div>
 </body>
 </html>
