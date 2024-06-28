@@ -1,16 +1,34 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Resultado de la Evaluación</title>
+    <title>Resultados de la Rúbrica</title>
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css">
 </head>
 <body>
-    <h1>Resultado de la Evaluación</h1>
-    <p><strong>Nota de la Presentación:</strong> {{ presentation_score }}</p>
-    <p><strong>Feedback:</strong></p>
-    <ul>
-        {% for item in feedback %}
-            <li>{{ item }}</li>
-        {% endfor %}
-    </ul>
+    <div class="container mt-5">
+        <h2 class="text-center">Resultados de la Presentación</h2>
+        {% if presentation_score != "N/A" %}
+            <p><strong>Puntaje de la Presentación:</strong> {{ presentation_score }}</p>
+            
+            <h3>Retroalimentación Específica</h3>
+            <ul>
+                {% for item in specific_feedback %}
+                    <li>{{ item }}</li>
+                {% endfor %}
+            </ul>
+        {% endif %}
+        
+        <h3>Feedback y Sugerencias Generales</h3>
+        <p>
+            {% for item in general_feedback %}
+                {{ item }}<br>
+            {% endfor %}
+        </p>
+
+        {% if rubric_table_html %}
+            <h3>Tabla Extraída de la Rúbrica</h3>
+            {{ rubric_table_html|safe }}
+        {% endif %}
+    </div>
 </body>
 </html>

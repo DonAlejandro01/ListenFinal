@@ -61,12 +61,15 @@ def uploader_file():
             presentation_path = os.path.join(app.config['UPLOAD_FOLDER'], presentation_filename)
             presentation_file.save(presentation_path)
             
-            # Si el perfil del usuario no es "other", se procede con la evaluación de la rúbrica
             if user_type != 'other' and rubric_file and allowed_file(rubric_file.filename):
                 rubric_filename = secure_filename(rubric_file.filename)
                 rubric_path = os.path.join(app.config['UPLOAD_FOLDER'], rubric_filename)
                 rubric_file.save(rubric_path)
-                
+
+                # Extraer tabla del PDF de la rúbrica
+                rubric_table = extract_rubric_table(rubric_path)
+                rubric_table_html = table_to_html(rubric_table)
+
                 rubric_text = extract_text_from_pdf(rubric_path)
                 is_rubric, _ = check_if_rubric(rubric_text)
                 
@@ -85,16 +88,17 @@ def uploader_file():
                 images = extract_images(presentation_path)
                 analyzed_images = [analyze_image_google_cloud(slide_idx, image) for slide_idx, image in images]
 
-                total_score, feedback_list = evaluate_presentation_by_measures(presentation_text, measures, points_type, titles, subtitles, body_texts, analyzed_images)
+                total_score, specific_feedback = evaluate_presentation(presentation_text, measures, points_type, titles, subtitles, body_texts, analyzed_images)
+                general_feedback = generate_general_feedback(presentation_theme, presentation_type, presentation_goal, titles, subtitles, body_texts, analyzed_images)
 
                 grade = convert_score_to_grade(total_score, max_score)  # Convertir el puntaje total en una nota
 
                 if grade == 7:
-                    feedback_list.append("Felicidades, has obtenido una nota perfecta. ¡Excelente trabajo!")
+                    general_feedback += "\nFelicidades, has obtenido una nota perfecta. ¡Excelente trabajo!"
 
-                return render_template('result.html', presentation_score=grade, feedback=feedback_list)
+                return render_template('result.html', presentation_score=grade, specific_feedback=specific_feedback, general_feedback=general_feedback.split('\n'), rubric_table_html=rubric_table_html)
             else:
-                # Si el perfil del usuario es "other", solo se extraen los datos y se proporciona feedback
+                # Caso cuando el usuario es "other"
                 presentation_text = extract_text_from_ppt(presentation_path)
                 titles = extract_titles(presentation_path)
                 subtitles = extract_subtitles(presentation_path)
@@ -102,15 +106,16 @@ def uploader_file():
                 images = extract_images(presentation_path)
                 analyzed_images = [analyze_image_google_cloud(slide_idx, image) for slide_idx, image in images]
 
-                feedback = generate_feedback_for_other(presentation_theme, presentation_type, presentation_goal, titles, subtitles, body_texts, analyzed_images)
-                feedback_list = [item.strip() for item in feedback.split('\n') if item.strip()]
-                
-                return render_template('result.html', presentation_score="N/A", feedback=feedback_list)
+                general_feedback = generate_general_feedback(presentation_theme, presentation_type, presentation_goal, titles, subtitles, body_texts, analyzed_images)
+
+                return render_template('result.html', presentation_score="N/A", specific_feedback=[], general_feedback=general_feedback.split('\n'), rubric_table_html=None)
         
         flash('Archivo no permitido')
         return redirect(request.url)
     else:
         return render_template('upload.html')
+
+
 
 def extract_text_from_pdf(filepath):
     doc = fitz.open(filepath)
@@ -277,7 +282,7 @@ def analyze_image_google_cloud(slide_idx, image):
     return slide_idx, analyzed_image_info  # Devolver el número de diapositiva junto con la información analizada
 
 
-def evaluate_presentation_by_measures(presentation_text, measures, points_type, titles, subtitles, body_texts, analyzed_images):
+def evaluate_presentation(presentation_text, measures, points_type, titles, subtitles, body_texts, analyzed_images):
     try:
         measures_str = "\n".join(measures)
         points_str = ", ".join(map(str, points_type))
@@ -287,7 +292,7 @@ def evaluate_presentation_by_measures(presentation_text, measures, points_type, 
         images_info_str = "\n".join([f"Slide {idx}: {info}" for idx, info in analyzed_images])
 
         prompt = f"""
-        Evalúa la siguiente presentación basada en las medidas y tipos de puntos proporcionados. Proporciona un puntaje para cada medida y un feedback general con recomendaciones para mejorar:
+        Evalúa la siguiente presentación basada en las medidas y tipos de puntos proporcionados. Proporciona un puntaje para cada medida y un feedback específico:
 
         Medidas:
         {measures_str}
@@ -311,20 +316,19 @@ def evaluate_presentation_by_measures(presentation_text, measures, points_type, 
         {presentation_text[:3000]}
         """
 
-        print(f"Prompt enviado a OpenAI: {prompt}")  # Imprimir el prompt para verificar su contenido
+        print(f"Prompt enviado a OpenAI: {prompt}")
         
         response = openai.ChatCompletion.create(
             model="gpt-4",
             messages=[
-                {"role": "system", "content": "You are an evaluation tool. Your job is to evaluate the provided presentation text based on the given rubric measures and point types, and provide scores for each measure and general feedback as the result."},
+                {"role": "system", "content": "You are an evaluation tool. Your job is to evaluate the provided presentation text based on the given rubric measures and point types, and provide scores for each measure and specific feedback."},
                 {"role": "user", "content": prompt}
             ]
         )
 
         response_content = response['choices'][0]['message']['content'].strip()
-        print(f"Respuesta de OpenAI: {response_content}")  # Imprimir la respuesta para verificar su contenido
+        print(f"Respuesta de OpenAI: {response_content}")
 
-        # Procesar la respuesta para extraer puntajes y feedback
         lines = response_content.split("\n")
         scores = {}
         feedback_lines = []
@@ -335,21 +339,48 @@ def evaluate_presentation_by_measures(presentation_text, measures, points_type, 
                 try:
                     score = int(score.strip().split("/")[0])
                     scores[measure] = score
+                    feedback_lines.append(f"{measure}: {score}")
                 except ValueError:
-                    # En caso de no poder convertir el puntaje, lo consideramos 0
                     scores[measure] = 0
+                    feedback_lines.append(f"{measure}: 0")
             else:
                 feedback_lines.append(line)
 
         feedback_list = [item.strip() for item in feedback_lines if item.strip()]
 
-        # Calcular el puntaje total
         total_score = sum(scores.values())
 
         return total_score, feedback_list
     except Exception as e:
         print(f"Error al evaluar la presentación: {e}")
         return 0, ["Error en la evaluación de la presentación."]
+
+
+def generate_general_feedback(theme, p_type, goal, titles, subtitles, body_texts, images_info):
+    prompt = f"""
+    Tema de la presentación: {theme}
+    Tipo de presentación: {p_type}
+    Objetivo de la presentación: {goal}
+    
+    Títulos: {', '.join(titles)}
+    Subtítulos: {', '.join(subtitles)}
+    Textos del cuerpo: {', '.join(body_texts)}
+    Información de las imágenes: {', '.join(info for _, info in images_info)}
+
+    Basado en la información anterior, proporciona recomendaciones generales para mejorar la presentación y asegurar que sea excelente.
+    """
+
+    response = openai.ChatCompletion.create(
+        model="gpt-4",
+        messages=[
+            {"role": "system", "content": "You are an evaluation assistant. Your job is to provide general feedback to improve the presentation based on the provided details."},
+            {"role": "user", "content": prompt}
+        ]
+    )
+
+    feedback = response['choices'][0]['message']['content'].strip()
+    return feedback
+
 
 def convert_score_to_grade(total_score, max_score):
     if max_score == 0:
@@ -371,7 +402,7 @@ def convert_score_to_grade(total_score, max_score):
         return 1
     
 
-def generate_feedback_for_other(theme, p_type, goal, titles, subtitles, body_texts, images_info):
+def generate_general_feedback(theme, p_type, goal, titles, subtitles, body_texts, images_info):
     prompt = f"""
     Tema de la presentación: {theme}
     Tipo de presentación: {p_type}
@@ -382,19 +413,77 @@ def generate_feedback_for_other(theme, p_type, goal, titles, subtitles, body_tex
     Textos del cuerpo: {', '.join(body_texts)}
     Información de las imágenes: {', '.join(info for _, info in images_info)}
 
-    Basado en la información anterior, proporciona recomendaciones para mejorar la presentación y asegurar que sea excelente.
+    Basado en la información anterior, proporciona recomendaciones generales para mejorar la presentación y asegurar que sea excelente. Proporciona la retroalimentación en español.
     """
 
     response = openai.ChatCompletion.create(
         model="gpt-4",
         messages=[
-            {"role": "system", "content": "You are an evaluation assistant. Your job is to provide feedback to improve the presentation based on the provided details."},
+            {"role": "system", "content": "Eres un asistente de evaluación. Tu trabajo es proporcionar retroalimentación para mejorar la presentación basada en los detalles proporcionados, en español."},
             {"role": "user", "content": prompt}
         ]
     )
 
     feedback = response['choices'][0]['message']['content'].strip()
     return feedback
+
+import pdfplumber
+
+def extract_rubric_table(pdf_path):
+    """
+    Extrae una tabla de rúbrica de un archivo PDF, incluyendo tablas que se extienden a lo largo de varias páginas.
+    Args:
+        pdf_path (str): La ruta al archivo PDF.
+    Returns:
+        list: Lista de listas que representa la tabla extraída del PDF.
+    """
+    table = []
+    try:
+        with pdfplumber.open(pdf_path) as pdf:
+            for page in pdf.pages:
+                extracted_table = page.extract_table()
+                if extracted_table:
+                    if not table:
+                        table.extend(extracted_table)  # Añadir la primera tabla completa
+                    else:
+                        table.extend(extracted_table[1:])  # Añadir la tabla sin el encabezado
+    except Exception as e:
+        print(f"Error al extraer la tabla del PDF: {e}")
+    
+    return table
+
+def table_to_html(table):
+    """
+    Construye una tabla HTML a partir de la tabla extraída del PDF.
+    Args:
+        table (list): Lista de listas que representa la tabla extraída del PDF.
+    Returns:
+        str: Tabla HTML.
+    """
+    if not table:
+        return "<p>No se encontró ninguna tabla en el PDF.</p>"
+
+    header = table[0]
+    html_table = '<table class="table table-bordered">'
+    
+    # Construir el encabezado
+    html_table += '<thead><tr>'
+    for cell in header:
+        html_table += f'<th>{cell}</th>'
+    html_table += '</tr></thead>'
+    
+    # Construir el cuerpo de la tabla
+    html_table += '<tbody>'
+    for row in table[1:]:
+        html_table += '<tr>'
+        for cell in row:
+            html_table += f'<td>{cell}</td>'
+        html_table += '</tr>'
+    html_table += '</tbody>'
+    
+    html_table += '</table>'
+    return html_table
+
 
 if __name__ == '__main__':
     app.run(debug=True)
