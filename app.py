@@ -46,13 +46,12 @@ def uploader_file():
         user_type = request.form['user_type']
         presentation_theme = request.form['presentation_theme']
         presentation_type = request.form['presentation_type']
-        presentation_goal = request.form['presentation_goal']
 
         if presentation_file.filename == '':
             flash('No se seleccionó ningún archivo de presentación')
             return redirect(request.url)
 
-        if user_type != 'other' and (not rubric_file or rubric_file.filename == ''):
+        if user_type not in ['salesperson', 'developer', 'marketing', 'public_speaker', 'Elementary', 'Secondary', 'Higher Education'] and (not rubric_file or rubric_file.filename == ''):
             flash('No se seleccionó ningún archivo de rúbrica')
             return redirect(request.url)
 
@@ -61,60 +60,65 @@ def uploader_file():
             presentation_path = os.path.join(app.config['UPLOAD_FOLDER'], presentation_filename)
             presentation_file.save(presentation_path)
             
-            if user_type != 'other' and rubric_file and allowed_file(rubric_file.filename):
-                rubric_filename = secure_filename(rubric_file.filename)
-                rubric_path = os.path.join(app.config['UPLOAD_FOLDER'], rubric_filename)
-                rubric_file.save(rubric_path)
+            if user_type in ['salesperson', 'developer', 'marketing', 'public_speaker']:
+                presentation_text = extract_text_from_ppt(presentation_path)
+                titles = extract_titles(presentation_path)
+                subtitles = extract_subtitles(presentation_path)
+                body_texts = extract_body_texts(presentation_path, titles, subtitles)
+                images = extract_images(presentation_path)
+                analyzed_images = [analyze_image_google_cloud(slide_idx, image) for slide_idx, image in images]
 
-                # Extraer tabla del PDF de la rúbrica
-                rubric_table = extract_rubric_table(rubric_path)
-                rubric_table_html = table_to_html(rubric_table)
+                general_feedback = generate_general_feedback(presentation_theme, presentation_type, titles, subtitles, body_texts, analyzed_images, user_type)
 
-                rubric_text = extract_text_from_pdf(rubric_path)
-                is_rubric, _ = check_if_rubric(rubric_text)
+                return render_template('result.html', presentation_score="N/A", specific_feedback=[], general_feedback=general_feedback.split('\n'), rubric_table_html=None, user_type=user_type)
+            elif user_type in ['elementary', 'secondary', 'higher_education']:
+                if rubric_file and allowed_file(rubric_file.filename):
+                    rubric_filename = secure_filename(rubric_file.filename)
+                    rubric_path = os.path.join(app.config['UPLOAD_FOLDER'], rubric_filename)
+                    rubric_file.save(rubric_path)
+
+                    # Extraer tabla del PDF de la rúbrica
+                    rubric_table = extract_rubric_table(rubric_path)
+                    rubric_table_html = table_to_html(rubric_table)
+
+                    rubric_text = extract_text_from_pdf(rubric_path)
+                    is_rubric, _ = check_if_rubric(rubric_text)
                 
-                if not is_rubric:
-                    flash('El archivo cargado no es una rúbrica válida')
+                    if not is_rubric:
+                        flash('El archivo cargado no es una rúbrica válida')
+                        return redirect(request.url)
+
+                    measures = get_measures(rubric_text)
+                    points_type = get_points_type(rubric_text)
+                    max_score = calculate_total_score(measures, points_type)  # Calcular el puntaje máximo
+
+                    presentation_text = extract_text_from_ppt(presentation_path)
+                    titles = extract_titles(presentation_path)
+                    subtitles = extract_subtitles(presentation_path)
+                    body_texts = extract_body_texts(presentation_path, titles, subtitles)
+                    images = extract_images(presentation_path)
+                    analyzed_images = [analyze_image_google_cloud(slide_idx, image) for slide_idx, image in images]
+
+                    total_score, specific_feedback = evaluate_presentation(presentation_text, measures, points_type, titles, subtitles, body_texts, analyzed_images, user_type)
+                    general_feedback = generate_general_feedback(presentation_theme, presentation_type, titles, subtitles, body_texts, analyzed_images, user_type)
+
+                    grade = convert_score_to_grade(total_score, max_score)  # Convertir el puntaje total en una nota
+
+                    if grade == 7:
+                        general_feedback += "\nFelicidades, has obtenido una nota perfecta. ¡Excelente trabajo!"
+
+                    return render_template('result.html', presentation_score=grade, specific_feedback=specific_feedback, general_feedback=general_feedback.split('\n'), rubric_table_html=rubric_table_html, user_type=user_type)
+                else:
+                    flash('No se seleccionó ningún archivo de rúbrica')
                     return redirect(request.url)
-
-                measures = get_measures(rubric_text)
-                points_type = get_points_type(rubric_text)
-                max_score = calculate_total_score(measures, points_type)  # Calcular el puntaje máximo
-
-                presentation_text = extract_text_from_ppt(presentation_path)
-                titles = extract_titles(presentation_path)
-                subtitles = extract_subtitles(presentation_path)
-                body_texts = extract_body_texts(presentation_path, titles, subtitles)
-                images = extract_images(presentation_path)
-                analyzed_images = [analyze_image_google_cloud(slide_idx, image) for slide_idx, image in images]
-
-                total_score, specific_feedback = evaluate_presentation(presentation_text, measures, points_type, titles, subtitles, body_texts, analyzed_images)
-                general_feedback = generate_general_feedback(presentation_theme, presentation_type, presentation_goal, titles, subtitles, body_texts, analyzed_images)
-
-                grade = convert_score_to_grade(total_score, max_score)  # Convertir el puntaje total en una nota
-
-                if grade == 7:
-                    general_feedback += "\nFelicidades, has obtenido una nota perfecta. ¡Excelente trabajo!"
-
-                return render_template('result.html', presentation_score=grade, specific_feedback=specific_feedback, general_feedback=general_feedback.split('\n'), rubric_table_html=rubric_table_html)
             else:
-                # Caso cuando el usuario es "other"
-                presentation_text = extract_text_from_ppt(presentation_path)
-                titles = extract_titles(presentation_path)
-                subtitles = extract_subtitles(presentation_path)
-                body_texts = extract_body_texts(presentation_path, titles, subtitles)
-                images = extract_images(presentation_path)
-                analyzed_images = [analyze_image_google_cloud(slide_idx, image) for slide_idx, image in images]
-
-                general_feedback = generate_general_feedback(presentation_theme, presentation_type, presentation_goal, titles, subtitles, body_texts, analyzed_images)
-
-                return render_template('result.html', presentation_score="N/A", specific_feedback=[], general_feedback=general_feedback.split('\n'), rubric_table_html=None)
+                flash('Tipo de usuario no permitido')
+                return redirect(request.url)
         
         flash('Archivo no permitido')
         return redirect(request.url)
     else:
         return render_template('upload.html')
-
 
 
 def extract_text_from_pdf(filepath):
@@ -265,7 +269,6 @@ def extract_images(filepath):
 
     return images
 
-
 def analyze_image_google_cloud(slide_idx, image):
     client = vision.ImageAnnotatorClient()
     img_byte_arr = io.BytesIO()
@@ -281,8 +284,7 @@ def analyze_image_google_cloud(slide_idx, image):
     
     return slide_idx, analyzed_image_info  # Devolver el número de diapositiva junto con la información analizada
 
-
-def evaluate_presentation(presentation_text, measures, points_type, titles, subtitles, body_texts, analyzed_images):
+def evaluate_presentation(presentation_text, measures, points_type, titles, subtitles, body_texts, analyzed_images, user_type):
     try:
         measures_str = "\n".join(measures)
         points_str = ", ".join(map(str, points_type))
@@ -292,7 +294,9 @@ def evaluate_presentation(presentation_text, measures, points_type, titles, subt
         images_info_str = "\n".join([f"Slide {idx}: {info}" for idx, info in analyzed_images])
 
         prompt = f"""
-        Evalúa la siguiente presentación basada en las medidas y tipos de puntos proporcionados. Proporciona un puntaje para cada medida y un feedback específico:
+        Evalúa la siguiente presentación basada en las medidas y tipos de puntos proporcionados adecuada para el nivel de '{user_type}'. Proporciona un puntaje para cada medida y un feedback específico:
+
+        Tipo de usuario: {user_type}
 
         Medidas:
         {measures_str}
@@ -321,7 +325,7 @@ def evaluate_presentation(presentation_text, measures, points_type, titles, subt
         response = openai.ChatCompletion.create(
             model="gpt-4",
             messages=[
-                {"role": "system", "content": "You are an evaluation tool. Your job is to evaluate the provided presentation text based on the given rubric measures and point types, and provide scores for each measure and specific feedback."},
+                {"role": "system", "content": "You are an evaluation tool. Your job is to evaluate the provided presentation text based on the given rubric measures and point types for the specified user type, and provide scores for each measure and specific feedback."},
                 {"role": "user", "content": prompt}
             ]
         )
@@ -355,32 +359,30 @@ def evaluate_presentation(presentation_text, measures, points_type, titles, subt
         print(f"Error al evaluar la presentación: {e}")
         return 0, ["Error en la evaluación de la presentación."]
 
-
-def generate_general_feedback(theme, p_type, goal, titles, subtitles, body_texts, images_info):
+def generate_general_feedback(theme, p_type, titles, subtitles, body_texts, images_info, user_type):
     prompt = f"""
     Tema de la presentación: {theme}
     Tipo de presentación: {p_type}
-    Objetivo de la presentación: {goal}
+    Tipo de usuario: {user_type}
     
     Títulos: {', '.join(titles)}
     Subtítulos: {', '.join(subtitles)}
     Textos del cuerpo: {', '.join(body_texts)}
     Información de las imágenes: {', '.join(info for _, info in images_info)}
 
-    Basado en la información anterior, proporciona recomendaciones generales para mejorar la presentación y asegurar que sea excelente.
+    Basado en la información anterior, proporciona recomendaciones generales para mejorar la presentación y asegurar que sea excelente. considera linguistica apropiada y termininos relacionados para el {user_type}
     """
 
     response = openai.ChatCompletion.create(
         model="gpt-4",
         messages=[
-            {"role": "system", "content": "You are an evaluation assistant. Your job is to provide general feedback to improve the presentation based on the provided details."},
+            {"role": "system", "content": "You are an evaluation assistant. Your job is to provide general feedback to improve the presentation based on the provided details and the specified user type."},
             {"role": "user", "content": prompt}
         ]
     )
 
     feedback = response['choices'][0]['message']['content'].strip()
     return feedback
-
 
 def convert_score_to_grade(total_score, max_score):
     if max_score == 0:
@@ -400,32 +402,6 @@ def convert_score_to_grade(total_score, max_score):
         return 2
     else:
         return 1
-    
-
-def generate_general_feedback(theme, p_type, goal, titles, subtitles, body_texts, images_info):
-    prompt = f"""
-    Tema de la presentación: {theme}
-    Tipo de presentación: {p_type}
-    Objetivo de la presentación: {goal}
-    
-    Títulos: {', '.join(titles)}
-    Subtítulos: {', '.join(subtitles)}
-    Textos del cuerpo: {', '.join(body_texts)}
-    Información de las imágenes: {', '.join(info for _, info in images_info)}
-
-    Basado en la información anterior, proporciona recomendaciones generales para mejorar la presentación y asegurar que sea excelente. Proporciona la retroalimentación en español.
-    """
-
-    response = openai.ChatCompletion.create(
-        model="gpt-4",
-        messages=[
-            {"role": "system", "content": "Eres un asistente de evaluación. Tu trabajo es proporcionar retroalimentación para mejorar la presentación basada en los detalles proporcionados, en español."},
-            {"role": "user", "content": prompt}
-        ]
-    )
-
-    feedback = response['choices'][0]['message']['content'].strip()
-    return feedback
 
 import pdfplumber
 
@@ -483,7 +459,6 @@ def table_to_html(table):
     
     html_table += '</table>'
     return html_table
-
 
 if __name__ == '__main__':
     app.run(debug=True)
