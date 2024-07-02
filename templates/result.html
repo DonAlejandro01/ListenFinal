@@ -27,6 +27,13 @@
             {% endfor %}
         </p>
 
+        <h3>Feedback sobre Contenido Inapropiado</h3>
+        <p>
+            {% for item in inappropriate_content_feedback %}
+                {{ item }}<br>
+            {% endfor %}
+        </p>
+
         {% if rubric_table_html %}
             <h3>Tabla Extraída de la Rúbrica</h3>
             {{ rubric_table_html|safe }}
