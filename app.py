@@ -34,6 +34,7 @@ if not os.path.exists(app.config['UPLOAD_FOLDER']):
 def upload_file():
     return render_template('upload.html')
 
+
 @app.route('/uploader', methods=['GET', 'POST'])
 def uploader_file():
     if request.method == 'POST':
@@ -69,9 +70,12 @@ def uploader_file():
             images = extract_images(presentation_path)
             analyzed_images = [analyze_image_google_cloud(slide_idx, image) for slide_idx, image in images]
 
+            # Obtener la descripción del tema
+            topic_description = get_topic_description(presentation_theme)
+
             if user_type in ['salesperson', 'developer', 'marketing', 'public_speaker']:
-                general_feedback = generate_general_feedback(presentation_theme, presentation_type, titles, subtitles, body_texts, analyzed_images, user_type)
-                return render_template('result.html', presentation_score="N/A", specific_feedback=[], general_feedback=general_feedback.split('\n'), inappropriate_content_feedback=inappropriate_content, rubric_table_html=None, user_type=user_type)
+                grade, general_feedback, slide_feedback = evaluate_presentation(presentation_text, measures, points_type, titles, subtitles, body_texts, analyzed_images, user_type, topic_description)
+                return render_template('result.html', presentation_score=grade, specific_feedback=[], general_feedback=general_feedback.split('\n'), inappropriate_content_feedback=inappropriate_content, rubric_table_html=None, user_type=user_type, slide_feedback=slide_feedback)
             elif user_type in ['elementary', 'secondary', 'university_students']:
                 if rubric_file and allowed_file(rubric_file.filename):
                     rubric_filename = secure_filename(rubric_file.filename)
@@ -93,15 +97,16 @@ def uploader_file():
                     points_type = get_points_type(rubric_text)
                     max_score = calculate_total_score(measures, points_type)  # Calcular el puntaje máximo
 
-                    total_score, specific_feedback = evaluate_presentation(presentation_text, measures, points_type, titles, subtitles, body_texts, analyzed_images, user_type)
+                    grade, specific_feedback, slide_feedback = evaluate_presentation(presentation_text, measures, points_type, titles, subtitles, body_texts, analyzed_images, user_type, topic_description)
                     general_feedback = generate_general_feedback(presentation_theme, presentation_type, titles, subtitles, body_texts, analyzed_images, user_type)
 
+                    total_score = sum([int(feedback.split(":")[1]) for feedback in specific_feedback if ":" in feedback])  # Calcular el puntaje total
                     grade = convert_score_to_grade(total_score, max_score)  # Convertir el puntaje total en una nota
 
                     if grade == 7:
                         general_feedback += "\nFelicidades, has obtenido una nota perfecta. ¡Excelente trabajo!"
 
-                    return render_template('result.html', presentation_score=grade, specific_feedback=specific_feedback, general_feedback=general_feedback.split('\n'), inappropriate_content_feedback=inappropriate_content, rubric_table_html=rubric_table_html, user_type=user_type)
+                    return render_template('result.html', presentation_score=grade, specific_feedback=specific_feedback, general_feedback=general_feedback.split('\n'), inappropriate_content_feedback=inappropriate_content, rubric_table_html=rubric_table_html, user_type=user_type, slide_feedback=slide_feedback)
                 else:
                     flash('No se seleccionó ningún archivo de rúbrica')
                     return redirect(request.url)
@@ -113,6 +118,9 @@ def uploader_file():
         return redirect(request.url)
     else:
         return render_template('upload.html')
+
+
+
 
 
 
@@ -278,8 +286,23 @@ def analyze_image_google_cloud(slide_idx, image):
     
     return slide_idx, analyzed_image_info  # Devolver el número de diapositiva junto con la información analizada
 
-def evaluate_presentation(presentation_text, measures, points_type, titles, subtitles, body_texts, analyzed_images, user_type):
+def evaluate_presentation(presentation_text, measures, points_type, titles, subtitles, body_texts, analyzed_images, user_type, topic_description):
     try:
+        slide_feedback = check_slide_consistency(titles, subtitles, body_texts, analyzed_images, topic_description)
+        total_score = 0
+        max_score = calculate_total_score(measures, points_type)
+        
+        for slide in slide_feedback:
+            is_consistent = True
+            for feedback in slide['feedback']:
+                if 'incoherencia' in feedback.lower():  # Asumimos que la palabra "incoherencia" indica un problema
+                    is_consistent = False
+                    break
+            if not is_consistent:
+                total_score -= 1  # Penalización por incoherencia, ajustar el valor según se necesite
+
+        total_score = max(total_score, 0)  # Asegurarse de que la puntuación no sea negativa
+
         measures_str = "\n".join(measures)
         points_str = ", ".join(map(str, points_type))
         titles_str = "\n".join(titles)
@@ -288,7 +311,7 @@ def evaluate_presentation(presentation_text, measures, points_type, titles, subt
         images_info_str = "\n".join([f"Slide {idx}: {info}" for idx, info in analyzed_images])
 
         prompt = f"""
-        Evalúa la siguiente presentación basada en las medidas y tipos de puntos proporcionados. Ademas debes considerar que el texto proporcionado es apropiado para {user_type} Proporciona un puntaje para cada medida y un feedback específico:
+        Evalúa la siguiente presentación basada en las medidas y tipos de puntos proporcionados. Proporciona un puntaje para cada medida y un feedback específico:
 
         Tipo de usuario: {user_type}
 
@@ -311,8 +334,6 @@ def evaluate_presentation(presentation_text, measures, points_type, titles, subt
         {images_info_str}
         """
 
-        print(f"Prompt enviado a OpenAI: {prompt}")
-        
         response = openai.ChatCompletion.create(
             model="gpt-4",
             messages=[
@@ -322,8 +343,6 @@ def evaluate_presentation(presentation_text, measures, points_type, titles, subt
         )
 
         response_content = response['choices'][0]['message']['content'].strip()
-        print(f"Respuesta de OpenAI: {response_content}")
-
         lines = response_content.split("\n")
         scores = {}
         feedback_lines = []
@@ -342,13 +361,14 @@ def evaluate_presentation(presentation_text, measures, points_type, titles, subt
                 feedback_lines.append(line)
 
         feedback_list = [item.strip() for item in feedback_lines if item.strip()]
+        total_score += sum(scores.values())
 
-        total_score = sum(scores.values())
+        grade = convert_score_to_grade(total_score, max_score)  # Calcular la nota final
 
-        return total_score, feedback_list
+        return grade, feedback_list, slide_feedback
     except Exception as e:
         print(f"Error al evaluar la presentación: {e}")
-        return 0, ["Error en la evaluación de la presentación."]
+        return 0, ["Error en la evaluación de la presentación."], []
 
 def generate_general_feedback(theme, p_type, titles, subtitles, body_texts, images_info, user_type):
     prompt = f"""
@@ -451,6 +471,101 @@ def table_to_html(table):
     
     html_table += '</table>'
     return html_table
+
+
+def generate_slide_feedback(titles, subtitles, body_texts, analyzed_images, user_type):
+    slide_feedback = []
+    for slide_idx, (title, subtitle, body_text, analyzed_image) in enumerate(zip(titles, subtitles, body_texts, analyzed_images)):
+        prompt = f"""
+        Proporciona recomendaciones específicas para mejorar la siguiente diapositiva. Asegúrate de que la información proporcionada sea apropiada para {user_type}:
+
+        Título: {title}
+        Subtítulo: {subtitle}
+        Texto del cuerpo: {body_text}
+        Información de las imágenes: {analyzed_image[1]}
+        """
+
+        response = openai.ChatCompletion.create(
+            model="gpt-4",
+            messages=[
+                {"role": "system", "content": "You are an evaluation assistant. Your job is to provide specific recommendations to improve the slide based on the provided details and the specified user type."},
+                {"role": "user", "content": prompt}
+            ]
+        )
+
+        feedback = response['choices'][0]['message']['content'].strip()
+        slide_feedback.append({
+            "slide": slide_idx + 1,
+            "feedback": feedback.split('\n')
+        })
+
+    return slide_feedback
+
+def check_slide_consistency(titles, subtitles, body_texts, analyzed_images, topic_description):
+    slide_feedback = []
+    for slide_idx, (title, subtitle, body_text, analyzed_image) in enumerate(zip(titles, subtitles, body_texts, analyzed_images)):
+        if slide_idx == 0:
+            prompt = f"""
+            Verifica si la siguiente diapositiva es una introducción clara del tema y quiénes son los presentadores. Proporciona feedback específico sobre cualquier inconsistencia y cómo mejorarla.
+
+            Descripción del tema: {topic_description}
+
+            Título: {title}
+            Subtítulo: {subtitle}
+            Texto del cuerpo: {body_text}
+            Información de las imágenes: {analyzed_image[1]}
+            """
+        else:
+            prompt = f"""
+            Verifica si el contenido de la siguiente diapositiva es coherente con el tema descrito. Proporciona sugerencias específicas para el título, subtítulo y contenido si no está claramente relacionado con el tema.
+
+            Descripción del tema: {topic_description}
+
+            Título: {title}
+            Subtítulo: {subtitle}
+            Texto del cuerpo: {body_text}
+            Información de las imágenes: {analyzed_image[1]}
+            """
+
+        try:
+            response = openai.ChatCompletion.create(
+                model="gpt-4",
+                messages=[
+                    {"role": "system", "content": "You are an evaluation assistant. Your job is to verify the consistency of the slide content with the provided topic description and provide specific suggestions for improvement."},
+                    {"role": "user", "content": prompt}
+                ]
+            )
+            feedback = response['choices'][0]['message']['content'].strip()
+            slide_feedback.append({
+                "slide": slide_idx + 1,
+                "feedback": feedback.split('\n')
+            })
+        except Exception as e:
+            print(f"Error al verificar la consistencia de la diapositiva: {e}")
+            slide_feedback.append({
+                "slide": slide_idx + 1,
+                "feedback": ["Error al verificar la consistencia de la diapositiva."]
+            })
+
+    return slide_feedback
+
+def get_topic_description(topic):
+    try:
+        response = openai.ChatCompletion.create(
+            model="gpt-4",
+            messages=[
+                {"role": "system", "content": "You are a knowledgeable assistant."},
+                {"role": "user", "content": f"Proporciona una breve descripción del tema: {topic}"}
+            ]
+        )
+        topic_description = response['choices'][0]['message']['content'].strip()
+        return topic_description
+    except Exception as e:
+        print(f"Error al obtener la descripción del tema: {e}")
+        return ""
+
+
+
 
 if __name__ == '__main__':
     app.run(debug=True)

@@ -8,11 +8,9 @@ Este proyecto realiza un análisis de una presentación PowerPoint según la rú
 ## Pasos a seguir
 
 1. Instalar dependenicas 
-- pip install Flask werkzeug pymupdf python-pptx python-dotenv Pillow openai==0.27.0 google-cloud-vision pdfplumber
-2. Iniciar variables de entorno en windows
- -  .\venv\Scripts\activate     
-3. Iniciar proyecto
-- python app_main.py
-- python app_feedback.py
-- python app_evaluation.py
+- pip install Flask werkzeug pymupdf python-pptx python-dotenv Pillow openai==0.27.0 google-cloud-vision pdfplumber streamlit
+
+2. Iniciar proyecto
+- python app.py
+
 

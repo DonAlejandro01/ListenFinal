@@ -1,43 +1,124 @@
 <!DOCTYPE html>
-<html>
+<html lang="es">
 <head>
-    <title>Resultados de la Rúbrica</title>
-    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Resultados de la Evaluación</title>
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
+    <style>
+        .container-fluid {
+            width: 100%;
+        }
+        .table-col {
+            width: 70%;
+        }
+        .feedback-col {
+            width: 30%;
+        }
+    </style>
 </head>
 <body>
-    <div class="container mt-5">
-        <h2 class="text-center">Resultados de la Presentación</h2>
-        {% if presentation_score != "N/A" %}
-            <p><strong>Puntaje de la Presentación:</strong> {{ presentation_score }}</p>
-            
-            {% if user_type not in ['developer', 'marketing', 'salesperson', 'public_speaker'] %}
-                <h3>Retroalimentación Específica</h3>
-                <ul>
-                    {% for item in specific_feedback %}
-                        <li>{{ item }}</li>
-                    {% endfor %}
-                </ul>
-            {% endif %}
-        {% endif %}
-        
-        <h3>Feedback y Sugerencias Generales</h3>
-        <p>
-            {% for item in general_feedback %}
-                {{ item }}<br>
-            {% endfor %}
-        </p>
+    <div class="container-fluid mt-5">
+        <div class="row">
+            <div class="col-md-8 table-col">
+                {% if rubric_table_html %}
+                <div class="card">
+                    <div class="card-header">
+                        <h2>Tabla de Rúbrica</h2>
+                    </div>
+                    <div class="card-body">
+                        {{ rubric_table_html|safe }}
+                    </div>
+                </div>
+                {% endif %}
+            </div>
+            <div class="col-md-4 feedback-col">
+                <div class="alert alert-info">
+                    <strong>Puntaje de la presentación:</strong> {{ presentation_score }}
+                </div>
+                
+                <div class="card mt-3">
+                    <div class="card-header">
+                        <h2>Feedback General</h2>
+                        <button class="btn btn-secondary btn-sm float-right" type="button" data-toggle="collapse" data-target="#generalFeedback" aria-expanded="false" aria-controls="generalFeedback">
+                            Mostrar/Ocultar
+                        </button>
+                    </div>
+                    <div class="collapse" id="generalFeedback">
+                        <div class="card-body">
+                            <ul>
+                                {% for feedback in general_feedback %}
+                                    <li>{{ feedback }}</li>
+                                {% endfor %}
+                            </ul>
+                        </div>
+                    </div>
+                </div>
 
-        <h3>Feedback sobre Contenido Inapropiado</h3>
-        <p>
-            {% for item in inappropriate_content_feedback %}
-                {{ item }}<br>
-            {% endfor %}
-        </p>
+                <div class="card mt-3">
+                    <div class="card-header">
+                        <h2>Contenido Inapropiado Detectado</h2>
+                        <button class="btn btn-secondary btn-sm float-right" type="button" data-toggle="collapse" data-target="#inappropriateContent" aria-expanded="false" aria-controls="inappropriateContent">
+                            Mostrar/Ocultar
+                        </button>
+                    </div>
+                    <div class="collapse" id="inappropriateContent">
+                        <div class="card-body">
+                            <ul>
+                                {% for issue in inappropriate_content_feedback %}
+                                    <li>{{ issue }}</li>
+                                {% endfor %}
+                            </ul>
+                        </div>
+                    </div>
+                </div>
 
-        {% if rubric_table_html %}
-            <h3>Tabla Extraída de la Rúbrica</h3>
-            {{ rubric_table_html|safe }}
-        {% endif %}
+                <div class="card mt-3">
+                    <div class="card-header">
+                        <h2>Feedback Específico por Diapositiva</h2>
+                        <button class="btn btn-secondary btn-sm float-right" type="button" data-toggle="collapse" data-target="#slideFeedback" aria-expanded="false" aria-controls="slideFeedback">
+                            Mostrar/Ocultar
+                        </button>
+                    </div>
+                    <div class="collapse" id="slideFeedback">
+                        <div class="card-body">
+                            <div id="slideFeedbackCarousel" class="carousel slide" data-ride="carousel">
+                                <div class="carousel-inner">
+                                    {% for slide in slide_feedback %}
+                                        <div class="carousel-item {% if loop.first %}active{% endif %}">
+                                            <div class="card">
+                                                <div class="card-header">
+                                                    <h3>Diapositiva {{ slide.slide }}</h3>
+                                                </div>
+                                                <div class="card-body">
+                                                    <ul>
+                                                        {% for feedback in slide.feedback %}
+                                                            <li>{{ feedback }}</li>
+                                                        {% endfor %}
+                                                    </ul>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    {% endfor %}
+                                </div>
+                                <a class="carousel-control-prev" href="#slideFeedbackCarousel" role="button" data-slide="prev">
+                                    <span class="carousel-control-prev-icon" aria-hidden="true"></span>
+                                    <span class="sr-only">Anterior</span>
+                                </a>
+                                <a class="carousel-control-next" href="#slideFeedbackCarousel" role="button" data-slide="next">
+                                    <span class="carousel-control-next-icon" aria-hidden="true"></span>
+                                    <span class="sr-only">Siguiente</span>
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
+
+    <script src="https://code.jquery.com/jquery-3.5.1.slim.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.9.2/dist/umd/popper.min.js"></script>
+    <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
 </body>
 </html>
