@@ -40,6 +40,24 @@
                 <div class="alert alert-info">
                     <strong>Puntaje de la presentación:</strong> {{ presentation_score }}
                 </div>
+
+                <div class="card mt-3">
+                    <div class="card-header">
+                        <h2>Ítems Utilizados para la Nota</h2>
+                        <button class="btn btn-secondary btn-sm float-right" type="button" data-toggle="collapse" data-target="#usedMeasures" aria-expanded="false" aria-controls="usedMeasures">
+                            Mostrar/Ocultar
+                        </button>
+                    </div>
+                    <div class="collapse" id="usedMeasures">
+                        <div class="card-body">
+                            <ul>
+                                {% for measure, score in used_measures.items() %}
+                                    <li>{{ measure }}: {{ score }}</li>
+                                {% endfor %}
+                            </ul>
+                        </div>
+                    </div>
+                </div>
                 
                 <div class="card mt-3">
                     <div class="card-header">

@@ -97,7 +97,7 @@ def uploader_file():
                     points_type = get_points_type(rubric_text)
                     max_score = calculate_total_score(measures, points_type)  # Calcular el puntaje máximo
 
-                    grade, specific_feedback, slide_feedback = evaluate_presentation(presentation_text, measures, points_type, titles, subtitles, body_texts, analyzed_images, user_type, topic_description)
+                    grade, specific_feedback, slide_feedback, used_measures = evaluate_presentation(presentation_text, measures, points_type, titles, subtitles, body_texts, analyzed_images, user_type, topic_description)
                     general_feedback = generate_general_feedback(presentation_theme, presentation_type, titles, subtitles, body_texts, analyzed_images, user_type)
 
                     total_score = sum([int(feedback.split(":")[1]) for feedback in specific_feedback if ":" in feedback])  # Calcular el puntaje total
@@ -106,7 +106,7 @@ def uploader_file():
                     if grade == 7:
                         general_feedback += "\nFelicidades, has obtenido una nota perfecta. ¡Excelente trabajo!"
 
-                    return render_template('result.html', presentation_score=grade, specific_feedback=specific_feedback, general_feedback=general_feedback.split('\n'), inappropriate_content_feedback=inappropriate_content, rubric_table_html=rubric_table_html, user_type=user_type, slide_feedback=slide_feedback)
+                    return render_template('result.html', presentation_score=grade, specific_feedback=specific_feedback, general_feedback=general_feedback.split('\n'), inappropriate_content_feedback=inappropriate_content, rubric_table_html=rubric_table_html, user_type=user_type, slide_feedback=slide_feedback, used_measures=used_measures)
                 else:
                     flash('No se seleccionó ningún archivo de rúbrica')
                     return redirect(request.url)
@@ -118,7 +118,6 @@ def uploader_file():
         return redirect(request.url)
     else:
         return render_template('upload.html')
-
 
 def extract_text_from_pdf(filepath):
     doc = fitz.open(filepath)
@@ -287,7 +286,8 @@ def evaluate_presentation(presentation_text, measures, points_type, titles, subt
         slide_feedback = check_slide_consistency(titles, subtitles, body_texts, analyzed_images, topic_description)
         total_score = 0
         max_score = calculate_total_score(measures, points_type)
-        
+        used_measures = {measure: 0 for measure in measures}  # Para marcar los ítems utilizados
+
         for slide in slide_feedback:
             is_consistent = True
             for feedback in slide['feedback']:
@@ -349,6 +349,7 @@ def evaluate_presentation(presentation_text, measures, points_type, titles, subt
                 try:
                     score = int(score.strip().split("/")[0])
                     scores[measure] = score
+                    used_measures[measure] = score  # Marcar el ítem utilizado
                     feedback_lines.append(f"{measure}: {score}")
                 except ValueError:
                     scores[measure] = 0
@@ -361,10 +362,10 @@ def evaluate_presentation(presentation_text, measures, points_type, titles, subt
 
         grade = convert_score_to_grade(total_score, max_score)  # Calcular la nota final
 
-        return grade, feedback_list, slide_feedback
+        return grade, feedback_list, slide_feedback, used_measures
     except Exception as e:
         print(f"Error al evaluar la presentación: {e}")
-        return 0, ["Error en la evaluación de la presentación."], []
+        return 0, ["Error en la evaluación de la presentación."], [], {}
 
 def generate_general_feedback(theme, p_type, titles, subtitles, body_texts, images_info, user_type):
     prompt = f"""
@@ -467,7 +468,6 @@ def table_to_html(table):
     
     html_table += '</table>'
     return html_table
-
 
 def generate_slide_feedback(titles, subtitles, body_texts, analyzed_images, user_type):
     slide_feedback = []
