@@ -34,7 +34,6 @@ if not os.path.exists(app.config['UPLOAD_FOLDER']):
 def upload_file():
     return render_template('upload.html')
 
-
 @app.route('/uploader', methods=['GET', 'POST'])
 def uploader_file():
     if request.method == 'POST':
@@ -73,8 +72,12 @@ def uploader_file():
             # Obtener la descripción del tema
             topic_description = get_topic_description(presentation_theme)
 
+            # Inicializar measures y points_type
+            measures = None
+            points_type = None
+
             if user_type in ['salesperson', 'developer', 'marketing', 'public_speaker']:
-                grade, general_feedback, slide_feedback = evaluate_presentation(presentation_text, measures, points_type, titles, subtitles, body_texts, analyzed_images, user_type, topic_description)
+                grade, general_feedback, slide_feedback = evaluate_presentation( measures, points_type, titles, subtitles, body_texts, analyzed_images, user_type, topic_description)
                 return render_template('result.html', presentation_score=grade, specific_feedback=[], general_feedback=general_feedback.split('\n'), inappropriate_content_feedback=inappropriate_content, rubric_table_html=None, user_type=user_type, slide_feedback=slide_feedback)
             elif user_type in ['elementary', 'secondary', 'university_students']:
                 if rubric_file and allowed_file(rubric_file.filename):
@@ -97,7 +100,7 @@ def uploader_file():
                     points_type = get_points_type(rubric_text)
                     max_score = calculate_total_score(measures, points_type)  # Calcular el puntaje máximo
 
-                    grade, specific_feedback, slide_feedback, used_measures = evaluate_presentation(presentation_text, measures, points_type, titles, subtitles, body_texts, analyzed_images, user_type, topic_description)
+                    grade, specific_feedback, slide_feedback, used_measures = evaluate_presentation( measures, points_type, titles, subtitles, body_texts, analyzed_images, user_type, topic_description)
                     general_feedback = generate_general_feedback(presentation_theme, presentation_type, titles, subtitles, body_texts, analyzed_images, user_type)
 
                     total_score = sum([int(feedback.split(":")[1]) for feedback in specific_feedback if ":" in feedback])  # Calcular el puntaje total
@@ -281,7 +284,7 @@ def analyze_image_google_cloud(slide_idx, image):
     
     return slide_idx, analyzed_image_info  # Devolver el número de diapositiva junto con la información analizada
 
-def evaluate_presentation(presentation_text, measures, points_type, titles, subtitles, body_texts, analyzed_images, user_type, topic_description):
+def evaluate_presentation( measures, points_type, titles, subtitles, body_texts, analyzed_images, user_type, topic_description):
     try:
         slide_feedback = check_slide_consistency(titles, subtitles, body_texts, analyzed_images, topic_description)
         total_score = 0
