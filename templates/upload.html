@@ -2,54 +2,102 @@
 <html>
 <head>
     <title>Subir Archivos</title>
-    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css">
+    <link rel="stylesheet" href="../static/index.css" />
 </head>
 <body>
-    <div class="container mt-5">
-        <h2 class="text-center">Subir Rúbrica y Presentación</h2>
-        {% with messages = get_flashed_messages() %}
-          {% if messages %}
-            <div class="alert alert-warning" role="alert">
-              {{ messages[0] }}
-            </div>
-          {% endif %}
-        {% endwith %}
-        <form action="{{ url_for('uploader_file') }}" method="post" enctype="multipart/form-data">
-            <div class="form-group">
-                <label for="rubric">Seleccione un archivo PDF de la rúbrica:</label>
-                <input type="file" class="form-control" id="rubric" name="rubric" accept=".pdf">
-            </div>
-            <div class="form-group">
-                <label for="presentation">Seleccione un archivo PPT de la presentación:</label>
-                <input type="file" class="form-control" id="presentation" name="presentation" accept=".ppt,.pptx">
-            </div>
-            <div class="form-group">
-                <label for="user_type">Tipo de Usuario:</label>
-                <select class="form-control" id="user_type" name="user_type">
-                    <option value="elementary">Enseñanza basica</option>
-                    <option value="secondary">Enseñanza media</option>
-                    <option value="university_students">Universitarios</option>
-                    <option value="marketing">Marketing</option>
-                    <option value="developer">Desarrollador</option>
-                    <option value="salesperson">Vendedores</option>
-                    <option value="public_speaker">Habladores publicos</option>
-                </select>
-            </div>
-            <div class="form-group">
-                <label for="presentation_theme">Tema de la Presentación:</label>
-                <input type="text" class="form-control" id="presentation_theme" name="presentation_theme" placeholder="Ingrese el tema de la presentación">
-            </div>
-            <div class="form-group">
-                <label for="presentation_type">Tipo de Presentación:</label>
-                <select class="form-control" id="presentation_type" name="presentation_type">
-                    <option value="formal">Formal</option>
-                    <option value="informal">Informal</option>
-                </select>
-            </div>
-            <button type="submit" class="btn btn-primary">Subir</button>
-        </form>
-    </div>
+    <main>
+        <section class="Formulario">
+            <h2 class="text-center">Subir Rúbrica y Presentación</h2>
+            {% with messages = get_flashed_messages() %} {% if messages %}
+            <div class="alert alert-warning" role="alert">{{ messages[0] }}</div>
+            {% endif %} {% endwith %}
+            <form
+                action="{{ url_for('uploader_file') }}"
+                method="post"
+                enctype="multipart/form-data"
+            >
+                <div class="containerLabel">
+                    <label class="archivos" for="rubric">
+                        <div class="text">
+                            <span>Subir archivo pdf</span>
+                        </div>
+                        <input
+                            type="file"
+                            class="form-control"
+                            id="rubric"
+                            name="rubric"
+                            accept=".pdf"
+                            required
+                        />
+                    </label>
 
-   
+                    <label class="archivos" for="presentation">
+                        <div class="text">
+                            <span>Subir archivo ppt</span>
+                        </div>
+                        <input
+                            type="file"
+                            class="form-control"
+                            id="presentation"
+                            name="presentation"
+                            accept=".ppt,.pptx"
+                            required
+                        />
+                    </label>
+                </div>
+
+                <div class="containerLabel">
+                    
+                    <label class="select-menu" for="user_type">
+                        <select class="form-control" id="user_type" name="user_type" required>
+                            <option selected disabled>Tipo de usuario</option>
+                            <option value="elementary">Enseñanza básica</option>
+                            <option value="secondary">Enseñanza media</option>
+                            <option value="university_students">Universitarios</option>
+                            <option value="marketing">Marketing</option>
+                            <option value="developer">Desarrollador</option>
+                            <option value="salesperson">Vendedores</option>
+                            <option value="public_speaker">Habladores públicos</option>
+                        </select>
+                    </label>
+
+                    <label class="select-menu" for="presentation_type">
+                        <select
+                            class="form-control"
+                            id="presentation_type"
+                            name="presentation_type"
+                            required>
+                            <option selected disabled>Tipo de presentación</option>
+                            <option value="formal">Formal</option>
+                            <option value="informal">Informal</option>
+                        </select>
+                    </label>
+
+                </div>
+
+                <div class="inputContainer"> 
+                    <input type="text" class="form-control" id="presentation_theme" name="presentation_theme" required>
+                    <label for="presentation_theme">Ingrese el tema de presentación</label>
+                </div>
+
+                <button type="submit" class="button">Subir</button>
+            </form>
+        </section>
+        <section class="Results hidden" id="Results">
+             <div class="container">
+                <div class="wrapper">
+                    <div class="circle"></div>
+                    <div class="circle"></div>
+                    <div class="circle"></div>
+                    <div class="shadow"></div>
+                    <div class="shadow"></div>
+                    <div class="shadow"></div>
+                </div>
+               
+                  <h2 id="Estado"></h2>
+                </div>
+        </section>
+    </main>
+    <script src="../static/index.js"></script>
 </body>
 </html>

@@ -120,10 +120,6 @@ def uploader_file():
         return render_template('upload.html')
 
 
-
-
-
-
 def extract_text_from_pdf(filepath):
     doc = fitz.open(filepath)
     text = ""
@@ -563,9 +559,6 @@ def get_topic_description(topic):
     except Exception as e:
         print(f"Error al obtener la descripción del tema: {e}")
         return ""
-
-
-
 
 if __name__ == '__main__':
     app.run(debug=True)

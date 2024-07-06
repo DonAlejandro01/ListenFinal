@@ -1,0 +1,10 @@
+Flask
+werkzeug 
+pymupdf 
+python-pptx 
+python-dotenv 
+Pillow 
+openai==0.27.0 
+google-cloud-vision 
+pdfplumber 
+streamlit
