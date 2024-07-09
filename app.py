@@ -51,7 +51,7 @@ def uploader_file():
             flash('No se seleccionó ningún archivo de presentación')
             return redirect(request.url)
 
-        if user_type not in ['salesperson', 'developer', 'marketing', 'public_speaker', 'elementary', 'secondary', 'university_students'] and (not rubric_file or rubric_file.filename == ''):
+        if user_type not in ['salesperson', 'developer', 'marketing', 'public_speaker', 'Enseñanza Basica', 'Enseñanza Media', 'Enseñanza universtaria'] and (not rubric_file or rubric_file.filename == ''):
             flash('No se seleccionó ningún archivo de rúbrica')
             return redirect(request.url)
 
@@ -79,7 +79,7 @@ def uploader_file():
             if user_type in ['salesperson', 'developer', 'marketing', 'public_speaker']:
                 grade, general_feedback, slide_feedback = evaluate_presentation( measures, points_type, titles, subtitles, body_texts, analyzed_images, user_type, topic_description)
                 return render_template('result.html', presentation_score=grade, specific_feedback=[], general_feedback=general_feedback.split('\n'), inappropriate_content_feedback=inappropriate_content, rubric_table_html=None, user_type=user_type, slide_feedback=slide_feedback)
-            elif user_type in ['elementary', 'secondary', 'university_students']:
+            elif user_type in ['Enseñanza Basica', 'Enseñanza Media', 'Enseñanza universtaria']:
                 if rubric_file and allowed_file(rubric_file.filename):
                     rubric_filename = secure_filename(rubric_file.filename)
                     rubric_path = os.path.join(app.config['UPLOAD_FOLDER'], rubric_filename)
